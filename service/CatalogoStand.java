@@ -4,7 +4,9 @@ import standvirtual.model.Carro;
 import standvirtual.model.Categoria;
 import standvirtual.model.Combustivel;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -38,24 +40,87 @@ public final class CatalogoStand {
     private final List<Carro> stock;
 
     public CatalogoStand() {
-        this.stock = criarStockInicial();
+        this.stock = Collections.unmodifiableList(criarStockInicial());
     }
 
-    public List<Carro> pesquisar(String termo, Categoria categoria, Combustivel combustivel, Ordenacao ordenacao) {
-        String filtro = termo == null ? "" : termo.trim().toLowerCase(Locale.ROOT);
+    public List<Carro> pesquisar(
+            String termo,
+            Categoria categoria,
+            Combustivel combustivel,
+            Integer precoMaximo,
+            Integer anoMinimo,
+            Ordenacao ordenacao) {
+        String filtro = normalizarTexto(termo);
+        Ordenacao ordemAplicada = ordenacao == null ? Ordenacao.PRECO_ASC : ordenacao;
 
         return stock.stream()
-                .filter(carro -> filtro.isEmpty()
-                        || carro.getNomeCompleto().toLowerCase(Locale.ROOT).contains(filtro)
-                        || carro.getDestaque().toLowerCase(Locale.ROOT).contains(filtro))
+                .filter(carro -> correspondeAoTermo(carro, filtro))
                 .filter(carro -> categoria == null || carro.getCategoria() == categoria)
                 .filter(carro -> combustivel == null || carro.getCombustivel() == combustivel)
-                .sorted(ordenacao.getComparator())
+                .filter(carro -> precoMaximo == null || carro.getPreco() <= precoMaximo.intValue())
+                .filter(carro -> anoMinimo == null || carro.getAno() >= anoMinimo.intValue())
+                .sorted(ordemAplicada.getComparator())
                 .collect(Collectors.toList());
     }
 
     public List<Carro> getDestaques() {
         return stock.stream().limit(3).collect(Collectors.toList());
+    }
+
+    public ResumoCatalogo resumir(List<Carro> carros) {
+        if (carros == null || carros.isEmpty()) {
+            return ResumoCatalogo.vazio();
+        }
+
+        double somaPrecos = 0.0;
+        double precoMinimo = Double.MAX_VALUE;
+        double precoMaximo = Double.MIN_VALUE;
+        Carro maisAcessivel = carros.get(0);
+        Carro maisRecente = carros.get(0);
+
+        for (Carro carro : carros) {
+            somaPrecos += carro.getPreco();
+            precoMinimo = Math.min(precoMinimo, carro.getPreco());
+            precoMaximo = Math.max(precoMaximo, carro.getPreco());
+            if (carro.getPreco() < maisAcessivel.getPreco()) {
+                maisAcessivel = carro;
+            }
+            if (carro.getAno() > maisRecente.getAno()) {
+                maisRecente = carro;
+            }
+        }
+
+        return new ResumoCatalogo(
+                carros.size(),
+                somaPrecos / carros.size(),
+                precoMinimo,
+                precoMaximo,
+                maisAcessivel,
+                maisRecente);
+    }
+
+    private boolean correspondeAoTermo(Carro carro, String filtro) {
+        if (filtro.isEmpty()) {
+            return true;
+        }
+
+        String indicePesquisa = normalizarTexto(
+                carro.getNomeCompleto() + " "
+                        + carro.getMarca() + " "
+                        + carro.getModelo() + " "
+                        + carro.getDestaque() + " "
+                        + carro.getDescricao() + " "
+                        + carro.getCategoria().getLabel() + " "
+                        + carro.getCombustivel().getLabel() + " "
+                        + carro.getTransmissao() + " "
+                        + carro.getAno());
+        return indicePesquisa.contains(filtro);
+    }
+
+    private String normalizarTexto(String texto) {
+        String base = texto == null ? "" : texto.trim().toLowerCase(Locale.ROOT);
+        return Normalizer.normalize(base, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "");
     }
 
     private List<Carro> criarStockInicial() {

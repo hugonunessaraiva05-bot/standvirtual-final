@@ -15,6 +15,7 @@ import javax.swing.Icon;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
@@ -28,6 +29,9 @@ import javax.swing.ListCellRenderer;
 import javax.swing.ListSelectionModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingWorker;
+import javax.swing.border.TitledBorder;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -58,6 +62,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -66,11 +71,17 @@ public final class StandFrame extends JFrame {
     private static final int IMAGEM_ALTURA = 240;
     private static final int MAX_REDIRECIONAMENTOS_IMAGEM = 5;
     private static final Map<String, ImageIcon> CACHE_IMAGENS = new HashMap<String, ImageIcon>();
-    private static final NumberFormat EURO = NumberFormat.getCurrencyInstance(new Locale("pt", "PT"));
+    private static final NumberFormat EURO = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pt-PT"));
+    private static final NumberFormat INTEIROS = NumberFormat.getIntegerInstance(Locale.forLanguageTag("pt-PT"));
     private static final double TAXA_CREDITO_ANUAL = 0.069;
+    private static final String BASE_UPLOAD_WIKIMEDIA = "https://upload.wikimedia.org/wikipedia/commons";
     private static final Pattern PADRAO_IMAGEM_WIKIPEDIA = Pattern.compile(
             "\"(?:originalimage|thumbnail)\"\\s*:\\s*\\{.*?\"source\"\\s*:\\s*\"([^\"]+)\"",
             Pattern.DOTALL);
+    private static final Pattern PADRAO_IMAGEM_COMMONS_THUMB = Pattern.compile(
+            "\"thumburl\"\\s*:\\s*\"([^\"]+)\"");
+    private static final Pattern PADRAO_IMAGEM_COMMONS_URL = Pattern.compile(
+            "\"url\"\\s*:\\s*\"([^\"]+)\"");
 
     private final CatalogoStand catalogo = new CatalogoStand();
     private final JTextField pesquisaField = new JTextField();
@@ -100,6 +111,8 @@ public final class StandFrame extends JFrame {
     private final JButton comprarProntoButton = new JButton("Comprar a pronto");
     private final JButton comprarCreditoButton = new JButton("Comprar com credito");
     private final JTextArea resumoCreditoArea = new JTextArea();
+    private JScrollPane listaScroll;
+    private TitledBorder listaBorder;
     private Carro carroSelecionado;
 
     public StandFrame() {
@@ -112,6 +125,7 @@ public final class StandFrame extends JFrame {
     private void configurarJanela() {
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setMinimumSize(new Dimension(1320, 820));
+        setSize(new Dimension(1400, 880));
         setLocationRelativeTo(null);
     }
 
@@ -138,7 +152,7 @@ public final class StandFrame extends JFrame {
 
         JLabel titulo = new JLabel("Escolha o carro certo com uma experiencia clara e moderna.");
         titulo.setForeground(Color.WHITE);
-        titulo.setFont(new Font("Segoe UI Bold", Font.PLAIN, 28));
+        titulo.setFont(new Font("Segoe UI Bold", Font.PLAIN, 31));
 
         JLabel subtitulo = new JLabel("Pesquisa rapida, galeria online e detalhe completo num unico painel.");
         subtitulo.setForeground(new Color(194, 201, 218));
@@ -162,28 +176,52 @@ public final class StandFrame extends JFrame {
     }
 
     private JPanel criarMiniCard(Carro carro) {
-        JPanel card = new JPanel(new BorderLayout());
+        JPanel card = new JPanel(new BorderLayout(0, 10));
         card.setOpaque(true);
-        card.setBackground(new Color(24, 34, 56));
+        card.setBackground(new Color(18, 28, 46));
         card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(45, 58, 89)),
-                BorderFactory.createEmptyBorder(12, 14, 12, 14)));
+                BorderFactory.createCompoundBorder(
+                        BorderFactory.createMatteBorder(3, 0, 0, 0, new Color(255, 211, 121)),
+                        BorderFactory.createLineBorder(new Color(42, 56, 84))),
+                BorderFactory.createEmptyBorder(14, 16, 14, 16)));
+
+        JPanel texto = new JPanel();
+        texto.setOpaque(false);
+        texto.setLayout(new BoxLayout(texto, BoxLayout.Y_AXIS));
+
+        JLabel selo = new JLabel("Selecao em destaque");
+        selo.setForeground(new Color(255, 211, 121));
+        selo.setFont(new Font("Segoe UI Semibold", Font.PLAIN, 11));
 
         JLabel nome = new JLabel(carro.getNomeCompleto());
         nome.setForeground(Color.WHITE);
-        nome.setFont(new Font("Segoe UI Semibold", Font.PLAIN, 15));
+        nome.setFont(new Font("Segoe UI Bold", Font.PLAIN, 16));
 
         JLabel destaque = new JLabel(carro.getDestaque());
         destaque.setForeground(new Color(194, 201, 218));
         destaque.setFont(new Font("Segoe UI", Font.PLAIN, 12));
 
-        JLabel preco = new JLabel(carro.getPrecoFormatado(), SwingConstants.RIGHT);
+        JLabel preco = new JLabel(carro.getPrecoFormatado());
         preco.setForeground(new Color(255, 211, 121));
-        preco.setFont(new Font("Segoe UI Bold", Font.PLAIN, 16));
+        preco.setFont(new Font("Segoe UI Bold", Font.PLAIN, 18));
 
-        card.add(nome, BorderLayout.NORTH);
-        card.add(destaque, BorderLayout.CENTER);
-        card.add(preco, BorderLayout.SOUTH);
+        JLabel categoria = new JLabel(carro.getCategoria().getLabel(), SwingConstants.RIGHT);
+        categoria.setForeground(new Color(194, 201, 218));
+        categoria.setFont(new Font("Segoe UI Semibold", Font.PLAIN, 11));
+
+        JPanel rodape = new JPanel(new BorderLayout(12, 0));
+        rodape.setOpaque(false);
+        rodape.add(preco, BorderLayout.WEST);
+        rodape.add(categoria, BorderLayout.EAST);
+
+        texto.add(selo);
+        texto.add(Box.createRigidArea(new Dimension(0, 8)));
+        texto.add(nome);
+        texto.add(Box.createRigidArea(new Dimension(0, 6)));
+        texto.add(destaque);
+
+        card.add(texto, BorderLayout.CENTER);
+        card.add(rodape, BorderLayout.SOUTH);
         return card;
     }
 
@@ -198,19 +236,27 @@ public final class StandFrame extends JFrame {
 
     private JPanel criarFiltros() {
         JPanel filtros = new JPanel(new GridLayout(1, 5, 12, 0));
-        filtros.setBackground(new Color(241, 243, 248));
+        filtros.setOpaque(true);
+        filtros.setBackground(Color.WHITE);
+        filtros.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(224, 227, 236)),
+                BorderFactory.createEmptyBorder(16, 16, 16, 16)));
 
         categoriaCombo.setModel(new DefaultComboBoxModel<Categoria>(Categoria.values()));
         categoriaCombo.insertItemAt(null, 0);
         categoriaCombo.setSelectedIndex(0);
-        categoriaCombo.setRenderer(criarRendererCombo("Todas"));
+        categoriaCombo.setRenderer(criarRendererCombo(Categoria::toString, "Todas"));
 
         combustivelCombo.setModel(new DefaultComboBoxModel<Combustivel>(Combustivel.values()));
         combustivelCombo.insertItemAt(null, 0);
         combustivelCombo.setSelectedIndex(0);
-        combustivelCombo.setRenderer(criarRendererCombo("Todos"));
+        combustivelCombo.setRenderer(criarRendererCombo(Combustivel::toString, "Todos"));
+
+        ordenacaoCombo.setRenderer(criarRendererCombo(CatalogoStand.Ordenacao::toString, "Ordenacao"));
+        adicionarPesquisaReativa();
 
         JButton limpar = new JButton("Limpar filtros");
+        estilizarBotaoSecundario(limpar);
         limpar.addActionListener(event -> {
             pesquisaField.setText("");
             categoriaCombo.setSelectedIndex(0);
@@ -220,9 +266,9 @@ public final class StandFrame extends JFrame {
         });
 
         pesquisaField.addActionListener(event -> aplicarFiltros());
-        categoriaCombo.addActionListener(event -> aplicarFiltros());
-        combustivelCombo.addActionListener(event -> aplicarFiltros());
-        ordenacaoCombo.addActionListener(event -> aplicarFiltros());
+        categoriaCombo.addActionListener(event -> reagirAFiltroAlterado());
+        combustivelCombo.addActionListener(event -> reagirAFiltroAlterado());
+        ordenacaoCombo.addActionListener(event -> reagirAFiltroAlterado());
 
         filtros.add(criarCampoFiltro("Pesquisar", pesquisaField));
         filtros.add(criarCampoFiltro("Categoria", categoriaCombo));
@@ -232,49 +278,103 @@ public final class StandFrame extends JFrame {
         return filtros;
     }
 
+    private void adicionarPesquisaReativa() {
+        pesquisaField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent event) {
+                aplicarFiltros();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent event) {
+                aplicarFiltros();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent event) {
+                aplicarFiltros();
+            }
+        });
+    }
+
     private JPanel criarCampoFiltro(String titulo, Component componente) {
         JPanel panel = new JPanel(new BorderLayout(0, 8));
-        panel.setBackground(new Color(241, 243, 248));
+        panel.setOpaque(false);
 
         JLabel label = new JLabel(titulo);
         label.setFont(new Font("Segoe UI Semibold", Font.PLAIN, 13));
         label.setForeground(new Color(70, 77, 94));
 
-        if (componente instanceof JTextField) {
-            JTextField textField = (JTextField) componente;
-            textField.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(new Color(205, 210, 222)),
-                    BorderFactory.createEmptyBorder(10, 12, 10, 12)));
-        }
+        estilizarComponenteCampo(componente);
 
         panel.add(label, BorderLayout.NORTH);
         panel.add(componente, BorderLayout.CENTER);
         return panel;
     }
 
+    private void estilizarComponenteCampo(Component componente) {
+        if (componente instanceof JTextField) {
+            JTextField textField = (JTextField) componente;
+            textField.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(new Color(205, 210, 222)),
+                    BorderFactory.createEmptyBorder(10, 12, 10, 12)));
+            textField.setBackground(Color.WHITE);
+            textField.setForeground(new Color(27, 33, 47));
+            textField.setCaretColor(new Color(20, 28, 45));
+        } else if (componente instanceof JComboBox) {
+            JComboBox<?> comboBox = (JComboBox<?>) componente;
+            comboBox.setFocusable(false);
+            comboBox.setBackground(Color.WHITE);
+            comboBox.setBorder(BorderFactory.createLineBorder(new Color(205, 210, 222)));
+        } else if (componente instanceof JButton) {
+            JButton button = (JButton) componente;
+            button.setFocusable(false);
+            button.setBackground(Color.WHITE);
+            button.setForeground(new Color(27, 33, 47));
+            button.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(new Color(205, 210, 222)),
+                    BorderFactory.createEmptyBorder(10, 14, 10, 14)));
+        }
+
+        if (componente instanceof JComponent) {
+            JComponent componenteVisual = (JComponent) componente;
+            componenteVisual.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+            Dimension tamanho = componenteVisual.getPreferredSize();
+            componenteVisual.setPreferredSize(new Dimension(Math.max(tamanho.width, 120), 42));
+        }
+    }
+
     private JSplitPane criarSplitPane() {
         carrosList.setCellRenderer(new CarroListCellRenderer());
         carrosList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        carrosList.setFixedCellHeight(96);
+        carrosList.setFixedCellHeight(104);
         carrosList.setBackground(new Color(241, 243, 248));
         carrosList.setSelectionBackground(new Color(20, 28, 45));
+        carrosList.setBorder(BorderFactory.createEmptyBorder(6, 6, 6, 6));
         carrosList.addListSelectionListener(event -> {
             if (!event.getValueIsAdjusting()) {
                 atualizarDetalhe(carrosList.getSelectedValue());
             }
         });
 
-        JScrollPane listaScroll = new JScrollPane(carrosList);
-        listaScroll.setBorder(BorderFactory.createTitledBorder("Catalogo"));
+        listaBorder = BorderFactory.createTitledBorder("Catalogo");
+        listaBorder.setTitleColor(new Color(70, 77, 94));
+        listaBorder.setTitleFont(new Font("Segoe UI Semibold", Font.PLAIN, 13));
+        listaScroll = new JScrollPane(carrosList);
+        listaScroll.setBorder(listaBorder);
+        listaScroll.getViewport().setBackground(new Color(241, 243, 248));
+        listaScroll.getVerticalScrollBar().setUnitIncrement(16);
 
         JPanel detalhe = criarPainelDetalhe();
         JScrollPane detalheScroll = new JScrollPane(detalhe);
         detalheScroll.setBorder(null);
+        detalheScroll.getViewport().setBackground(new Color(241, 243, 248));
         detalheScroll.getVerticalScrollBar().setUnitIncrement(16);
 
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, listaScroll, detalheScroll);
         splitPane.setResizeWeight(0.50);
         splitPane.setBorder(null);
+        splitPane.setDividerSize(10);
         return splitPane;
     }
 
@@ -344,11 +444,17 @@ public final class StandFrame extends JFrame {
         descricaoDetalhe.setForeground(new Color(58, 65, 81));
         descricaoDetalhe.setText("Selecione um modelo para ver a descricao comercial e os detalhes tecnicos.");
 
-        JPanel corpo = new JPanel(new BorderLayout(0, 16));
+        JPanel blocosTexto = new JPanel();
+        blocosTexto.setOpaque(false);
+        blocosTexto.setLayout(new BoxLayout(blocosTexto, BoxLayout.Y_AXIS));
+        blocosTexto.add(criarPainelTextoDetalhe("Visao geral", specsDetalhe));
+        blocosTexto.add(Box.createRigidArea(new Dimension(0, 14)));
+        blocosTexto.add(criarPainelTextoDetalhe("Descricao", descricaoDetalhe));
+
+        JPanel corpo = new JPanel(new BorderLayout(0, 18));
         corpo.setOpaque(false);
         corpo.add(grelha, BorderLayout.NORTH);
-        corpo.add(specsDetalhe, BorderLayout.CENTER);
-        corpo.add(descricaoDetalhe, BorderLayout.SOUTH);
+        corpo.add(blocosTexto, BorderLayout.CENTER);
 
         painel.add(topo, BorderLayout.NORTH);
         painel.add(corpo, BorderLayout.CENTER);
@@ -379,6 +485,8 @@ public final class StandFrame extends JFrame {
         topo.add(subtitulo);
 
         prazoCreditoCombo.setSelectedItem(Integer.valueOf(84));
+        prazoCreditoCombo.setRenderer(criarRendererCombo(value -> value + " meses", "Prazo"));
+        prazoCreditoCombo.setEnabled(false);
         prazoCreditoCombo.addActionListener(event -> atualizarResumoCredito());
 
         JPanel grelha = new JPanel(new GridLayout(2, 2, 12, 12));
@@ -396,14 +504,12 @@ public final class StandFrame extends JFrame {
         resumoCreditoArea.setForeground(new Color(58, 65, 81));
         resumoCreditoArea.setText("Selecione um carro para ver as condicoes de compra.");
 
-        comprarProntoButton.setFocusPainted(false);
-        comprarProntoButton.setBackground(new Color(20, 28, 45));
-        comprarProntoButton.setForeground(Color.WHITE);
+        estilizarBotaoAcao(comprarProntoButton, new Color(20, 28, 45), Color.WHITE);
+        comprarProntoButton.setEnabled(false);
         comprarProntoButton.addActionListener(event -> finalizarCompra(false));
 
-        comprarCreditoButton.setFocusPainted(false);
-        comprarCreditoButton.setBackground(new Color(197, 131, 32));
-        comprarCreditoButton.setForeground(Color.WHITE);
+        estilizarBotaoAcao(comprarCreditoButton, new Color(197, 131, 32), Color.WHITE);
+        comprarCreditoButton.setEnabled(false);
         comprarCreditoButton.addActionListener(event -> finalizarCompra(true));
 
         JPanel controlos = new JPanel(new BorderLayout(12, 0));
@@ -427,19 +533,58 @@ public final class StandFrame extends JFrame {
         return wrapper;
     }
 
+    private void estilizarBotaoAcao(JButton botao, Color fundo, Color texto) {
+        botao.setFocusable(false);
+        botao.setFocusPainted(false);
+        botao.setBorderPainted(false);
+        botao.setBackground(fundo);
+        botao.setForeground(texto);
+        botao.setFont(new Font("Segoe UI Semibold", Font.PLAIN, 14));
+    }
+
+    private void estilizarBotaoSecundario(JButton botao) {
+        botao.setFocusable(false);
+        botao.setFocusPainted(false);
+        botao.setBackground(new Color(248, 249, 252));
+        botao.setForeground(new Color(27, 33, 47));
+        botao.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(205, 210, 222)),
+                BorderFactory.createEmptyBorder(10, 14, 10, 14)));
+        botao.setFont(new Font("Segoe UI Semibold", Font.PLAIN, 13));
+    }
+
     private JLabel criarBadge() {
         JLabel badge = new JLabel("Showroom");
         badge.setOpaque(true);
         badge.setBackground(new Color(255, 241, 213));
         badge.setForeground(new Color(156, 98, 8));
+        badge.setFont(new Font("Segoe UI Semibold", Font.PLAIN, 12));
         badge.setBorder(BorderFactory.createEmptyBorder(6, 10, 6, 10));
         return badge;
+    }
+
+    private JPanel criarPainelTextoDetalhe(String titulo, JComponent conteudo) {
+        JPanel card = new JPanel(new BorderLayout(0, 10));
+        card.setBackground(new Color(248, 250, 253));
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(228, 232, 240)),
+                BorderFactory.createEmptyBorder(14, 16, 14, 16)));
+
+        JLabel tituloLabel = new JLabel(titulo);
+        tituloLabel.setFont(new Font("Segoe UI Semibold", Font.PLAIN, 13));
+        tituloLabel.setForeground(new Color(70, 77, 94));
+
+        card.add(tituloLabel, BorderLayout.NORTH);
+        card.add(conteudo, BorderLayout.CENTER);
+        return card;
     }
 
     private JPanel criarInfoCard(String titulo, JLabel valorLabel) {
         JPanel card = new JPanel(new BorderLayout(0, 6));
         card.setBackground(new Color(245, 247, 250));
-        card.setBorder(BorderFactory.createEmptyBorder(12, 14, 12, 14));
+        card.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(228, 232, 240)),
+                BorderFactory.createEmptyBorder(12, 14, 12, 14)));
 
         JLabel tituloLabel = new JLabel(titulo);
         tituloLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
@@ -452,14 +597,16 @@ public final class StandFrame extends JFrame {
 
     private JLabel criarValorInfo(String valor) {
         JLabel label = new JLabel(valor);
-        label.setFont(new Font("Segoe UI Bold", Font.PLAIN, 18));
+        label.setFont(new Font("Segoe UI Bold", Font.PLAIN, 19));
         label.setForeground(new Color(20, 28, 45));
         return label;
     }
 
-    private <T> ListCellRenderer<? super T> criarRendererCombo(final String opcaoVazia) {
+    private <T> ListCellRenderer<? super T> criarRendererCombo(
+            final Function<T, String> formatador,
+            final String opcaoVazia) {
         return (list, value, index, isSelected, cellHasFocus) -> {
-            JLabel label = new JLabel(value == null ? opcaoVazia : value.toString());
+            JLabel label = new JLabel(value == null ? opcaoVazia : formatador.apply(value));
             label.setOpaque(true);
             label.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
             label.setBackground(isSelected ? new Color(20, 28, 45) : Color.WHITE);
@@ -468,23 +615,62 @@ public final class StandFrame extends JFrame {
         };
     }
 
+    private void reagirAFiltroAlterado() {
+        aplicarFiltros();
+    }
+
     private void aplicarFiltros() {
+        Carro selecaoAtual = carroSelecionado;
         carrosModel.clear();
         List<Carro> resultado = catalogo.pesquisar(
                 pesquisaField.getText(),
                 (Categoria) categoriaCombo.getSelectedItem(),
                 (Combustivel) combustivelCombo.getSelectedItem(),
+                null,
+                null,
                 (CatalogoStand.Ordenacao) ordenacaoCombo.getSelectedItem());
 
         for (Carro carro : resultado) {
             carrosModel.addElement(carro);
         }
 
-        if (!resultado.isEmpty()) {
-            carrosList.setSelectedIndex(0);
-        } else {
+        atualizarTituloLista(resultado.size());
+
+        if (resultado.isEmpty()) {
+            carrosList.clearSelection();
             atualizarDetalhe(null);
+            return;
         }
+
+        if (selecaoAtual != null && selecionarCarroNaLista(selecaoAtual)) {
+            return;
+        }
+
+        carrosList.setSelectedIndex(0);
+        carrosList.ensureIndexIsVisible(0);
+    }
+
+    private void atualizarTituloLista(int totalResultados) {
+        if (listaBorder == null || listaScroll == null) {
+            return;
+        }
+
+        String titulo = totalResultados == 1
+                ? "Catalogo (1 resultado)"
+                : "Catalogo (" + totalResultados + " resultados)";
+        listaBorder.setTitle(titulo);
+        listaScroll.repaint();
+    }
+
+    private boolean selecionarCarroNaLista(Carro carro) {
+        for (int indice = 0; indice < carrosModel.size(); indice++) {
+            if (carrosModel.getElementAt(indice) == carro) {
+                carrosList.setSelectedIndex(indice);
+                carrosList.ensureIndexIsVisible(indice);
+                return true;
+            }
+        }
+        return false;
     }
 
     private void atualizarDetalhe(Carro carro) {
@@ -506,7 +692,9 @@ public final class StandFrame extends JFrame {
             imagemLabel.setIcon(null);
             imagemLabel.setText("Sem imagem disponivel para a pesquisa atual.");
             fonteImagemLabel.setText("Fonte da imagem");
+            fonteImagemLabel.setEnabled(false);
             resumoCreditoArea.setText("Selecione um carro para ver as condicoes de compra.");
+            prazoCreditoCombo.setEnabled(false);
             comprarProntoButton.setEnabled(false);
             comprarCreditoButton.setEnabled(false);
             return;
@@ -519,9 +707,13 @@ public final class StandFrame extends JFrame {
         descricaoDetalhe.setText(carro.getDescricao());
         anoValorLabel.setText(String.valueOf(carro.getAno()));
         potenciaValorLabel.setText(carro.getCavalos() + " cv");
-        kilometrosValorLabel.setText(carro.getQuilometros() + " km");
+        kilometrosValorLabel.setText(INTEIROS.format(carro.getQuilometros()) + " km");
         transmissaoValorLabel.setText(carro.getTransmissao());
-        fonteImagemLabel.setText("<html><u>" + carro.getImagemFonte() + "</u></html>");
+        fonteImagemLabel.setText(carro.getImagemFonte() == null
+                ? "Fonte da imagem"
+                : "<html><u>" + carro.getImagemFonte() + "</u></html>");
+        fonteImagemLabel.setEnabled(true);
+        prazoCreditoCombo.setEnabled(true);
         comprarProntoButton.setEnabled(true);
         comprarCreditoButton.setEnabled(true);
         atualizarResumoCredito();
@@ -542,7 +734,7 @@ public final class StandFrame extends JFrame {
         entradaValorLabel.setText(EURO.format(entrada));
         mensalidadeValorLabel.setText(EURO.format(mensalidade));
         prazoValorLabel.setText(meses + " meses");
-        taxaValorLabel.setText(String.format(Locale.US, "%.1f%% TAEG", TAXA_CREDITO_ANUAL * 100.0));
+        taxaValorLabel.setText(String.format(Locale.forLanguageTag("pt-PT"), "%.1f%% TAEG", TAXA_CREDITO_ANUAL * 100.0));
         resumoCreditoArea.setText(
                 "Entrada inicial de " + EURO.format(entrada)
                         + " e financiamento de " + EURO.format(montanteFinanciado)
@@ -609,7 +801,7 @@ public final class StandFrame extends JFrame {
             protected ImageIcon doInBackground() throws Exception {
                 BufferedImage imagemOriginal = descarregarImagem(origemImagem);
                 if (imagemOriginal == null) {
-                    imagemOriginal = descarregarThumbnailWikipedia(carro.getImagemPaginaUrl());
+                    imagemOriginal = descarregarImagemDaPagina(carro.getImagemPaginaUrl());
                 }
                 if (imagemOriginal == null) {
                     return null;
@@ -676,6 +868,9 @@ public final class StandFrame extends JFrame {
     }
 
     private String[] criarTentativasImagem(String imagemUrl) {
+        if (imagemUrl.contains("/wikipedia/commons/thumb/")) {
+            return criarTentativasUploadWikimedia(imagemUrl);
+        }
         if (imagemUrl.contains("commons.wikimedia.org/wiki/Special:FilePath/")) {
             return criarTentativasWikimedia(imagemUrl, "/wiki/Special:FilePath/");
         }
@@ -683,6 +878,39 @@ public final class StandFrame extends JFrame {
             return criarTentativasWikimedia(imagemUrl, "/wiki/File:");
         }
         return new String[]{imagemUrl};
+    }
+
+    private String[] criarTentativasUploadWikimedia(String imagemUrl) {
+        int indiceThumb = imagemUrl.indexOf("/thumb/");
+        if (indiceThumb < 0) {
+            return new String[]{imagemUrl};
+        }
+
+        String caminhoRelativo = imagemUrl.substring(indiceThumb + "/thumb/".length());
+        int ultimaBarra = caminhoRelativo.lastIndexOf('/');
+        if (ultimaBarra < 0) {
+            return new String[]{imagemUrl};
+        }
+
+        String caminhoFicheiro = caminhoRelativo.substring(0, ultimaBarra);
+        int penultimaBarra = caminhoFicheiro.lastIndexOf('/');
+        if (penultimaBarra < 0) {
+            return new String[]{imagemUrl};
+        }
+
+        String pastasHash = caminhoFicheiro.substring(0, penultimaBarra);
+        String nomeFicheiro = caminhoFicheiro.substring(penultimaBarra + 1);
+        if (pastasHash.isEmpty() || nomeFicheiro.isEmpty()) {
+            return new String[]{imagemUrl};
+        }
+
+        Set<String> tentativas = new LinkedHashSet<String>();
+        tentativas.add(imagemUrl);
+        tentativas.add(BASE_UPLOAD_WIKIMEDIA + "/thumb/" + pastasHash + "/" + nomeFicheiro + "/320px-" + nomeFicheiro);
+        tentativas.add(BASE_UPLOAD_WIKIMEDIA + "/thumb/" + pastasHash + "/" + nomeFicheiro + "/640px-" + nomeFicheiro);
+        tentativas.add(BASE_UPLOAD_WIKIMEDIA + "/thumb/" + pastasHash + "/" + nomeFicheiro + "/1280px-" + nomeFicheiro);
+        tentativas.add(BASE_UPLOAD_WIKIMEDIA + "/" + pastasHash + "/" + nomeFicheiro);
+        return tentativas.toArray(new String[0]);
     }
 
     private String[] criarTentativasWikimedia(String imagemUrl, String marcador) {
@@ -787,17 +1015,28 @@ public final class StandFrame extends JFrame {
         return ligacao;
     }
 
-    private BufferedImage descarregarThumbnailWikipedia(String paginaUrl) throws Exception {
-        if (paginaUrl == null || !paginaUrl.contains("en.wikipedia.org/wiki/")) {
+    private BufferedImage descarregarImagemDaPagina(String paginaUrl) throws Exception {
+        if (paginaUrl == null || paginaUrl.trim().isEmpty()) {
             return null;
         }
 
-        String titulo = paginaUrl.substring(paginaUrl.indexOf("/wiki/") + 6);
+        if (paginaUrl.contains("commons.wikimedia.org/wiki/File:")) {
+            return descarregarImagemCommons(paginaUrl);
+        }
+        if (paginaUrl.contains("en.wikipedia.org/wiki/")) {
+            return descarregarThumbnailWikipedia(paginaUrl);
+        }
+        return null;
+    }
+
+    private BufferedImage descarregarThumbnailWikipedia(String paginaUrl) throws Exception {
+        String titulo = extrairTituloDaPaginaWiki(paginaUrl);
         if (titulo.trim().isEmpty()) {
             return null;
         }
 
-        String apiUrl = "https://en.wikipedia.org/api/rest_v1/page/summary/" + titulo;
+        String tituloCodificado = URLEncoder.encode(titulo, StandardCharsets.UTF_8).replace("+", "%20");
+        String apiUrl = "https://en.wikipedia.org/api/rest_v1/page/summary/" + tituloCodificado;
         HttpURLConnection ligacao = (HttpURLConnection) new URL(apiUrl).openConnection();
         ligacao.setConnectTimeout(8000);
         ligacao.setReadTimeout(8000);
@@ -818,7 +1057,7 @@ public final class StandFrame extends JFrame {
                     return null;
                 }
 
-                String imagemUrl = matcher.group(1).replace("\\/", "/");
+                String imagemUrl = normalizarUrlJson(matcher.group(1));
                 return descarregarImagem(imagemUrl);
             } finally {
                 stream.close();
@@ -826,6 +1065,72 @@ public final class StandFrame extends JFrame {
         } finally {
             ligacao.disconnect();
         }
+    }
+
+    private BufferedImage descarregarImagemCommons(String paginaUrl) throws Exception {
+        String titulo = extrairTituloDaPaginaWiki(paginaUrl);
+        if (titulo.trim().isEmpty()) {
+            return null;
+        }
+
+        String tituloCodificado = URLEncoder.encode(titulo, StandardCharsets.UTF_8).replace("+", "%20");
+        String apiUrl =
+                "https://commons.wikimedia.org/w/api.php?action=query&prop=imageinfo&iiprop=url"
+                        + "&iiurlwidth=1280&format=json&titles=" + tituloCodificado;
+        HttpURLConnection ligacao = (HttpURLConnection) new URL(apiUrl).openConnection();
+        ligacao.setConnectTimeout(8000);
+        ligacao.setReadTimeout(8000);
+        ligacao.setUseCaches(false);
+        ligacao.setInstanceFollowRedirects(true);
+        ligacao.setRequestProperty("User-Agent", "Mozilla/5.0");
+        ligacao.setRequestProperty("Accept", "application/json");
+        try {
+            if (ligacao.getResponseCode() < 200 || ligacao.getResponseCode() >= 300) {
+                return null;
+            }
+
+            InputStream stream = ligacao.getInputStream();
+            try {
+                String json = new String(lerBytes(stream), StandardCharsets.UTF_8);
+                String imagemUrl = extrairImagemCommonsDoJson(json);
+                return imagemUrl == null ? null : descarregarImagem(imagemUrl);
+            } finally {
+                stream.close();
+            }
+        } finally {
+            ligacao.disconnect();
+        }
+    }
+
+    private String extrairTituloDaPaginaWiki(String paginaUrl) {
+        int indice = paginaUrl.indexOf("/wiki/");
+        if (indice < 0) {
+            return "";
+        }
+
+        String titulo = paginaUrl.substring(indice + 6);
+        int queryIndex = titulo.indexOf('?');
+        if (queryIndex >= 0) {
+            titulo = titulo.substring(0, queryIndex);
+        }
+        return URLDecoder.decode(titulo, StandardCharsets.UTF_8).trim();
+    }
+
+    private String extrairImagemCommonsDoJson(String json) {
+        Matcher thumbMatcher = PADRAO_IMAGEM_COMMONS_THUMB.matcher(json);
+        if (thumbMatcher.find()) {
+            return normalizarUrlJson(thumbMatcher.group(1));
+        }
+
+        Matcher urlMatcher = PADRAO_IMAGEM_COMMONS_URL.matcher(json);
+        if (urlMatcher.find()) {
+            return normalizarUrlJson(urlMatcher.group(1));
+        }
+        return null;
+    }
+
+    private String normalizarUrlJson(String valor) {
+        return valor == null ? null : valor.replace("\\/", "/");
     }
 
     private byte[] lerBytes(InputStream stream) throws Exception {

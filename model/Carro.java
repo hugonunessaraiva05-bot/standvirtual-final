@@ -4,7 +4,10 @@ import java.text.NumberFormat;
 import java.util.Locale;
 
 public final class Carro {
-    private static final NumberFormat EURO = NumberFormat.getCurrencyInstance(new Locale("pt", "PT"));
+    private static final NumberFormat EURO =
+            NumberFormat.getCurrencyInstance(Locale.forLanguageTag("pt-PT"));
+    private static final NumberFormat INTEIROS =
+            NumberFormat.getIntegerInstance(Locale.forLanguageTag("pt-PT"));
 
     private final String marca;
     private final String modelo;
@@ -117,6 +120,6 @@ public final class Carro {
     }
 
     public String getResumo() {
-        return ano + "  |  " + quilometros + " km  |  " + combustivel.getLabel();
+        return ano + "  |  " + INTEIROS.format(quilometros) + " km  |  " + combustivel.getLabel();
     }
 }
